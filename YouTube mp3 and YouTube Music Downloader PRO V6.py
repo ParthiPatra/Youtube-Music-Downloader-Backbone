@@ -32,7 +32,8 @@ def trigger_crash_report(exctype, value, tb, custom_context=""):
     crash_folder = os.path.join(SCRIPT_DIR, "Music_Script_Error_Data")
     os.makedirs(crash_folder, exist_ok=True)
     
-    timestamp =     crash_file = os.path.join(crash_folder, f"Error_Crash_Handler_{timestamp}.txt")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    crash_file = os.path.join(crash_folder, f"Error_Crash_Handler_{timestamp}.txt")
     
     run_duration = round(time.time() - SCRIPT_START_TIME, 2)
     
@@ -165,51 +166,40 @@ def remove_lock():
 atexit.register(remove_lock)
 
 # ==========================================
-# INTERNAL BACKUP SYSTEM
+# NEW EVENT-DRIVEN BACKUP SYSTEM
 # ==========================================
-def verify_and_backup():
+def execute_backup(suffix=""):
     if not os.path.exists(BACKUP_DIR):
-        os.makedirs(BACKUP_DIR)
+        os.makedirs(BACKUP_DIR, exist_ok=True)
         
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    current_backup_folder = os.path.join(BACKUP_DIR, timestamp)
-    
-    existing_backups = glob.glob(os.path.join(BACKUP_DIR, '*\\*.py'))
-    needs_backup = True
-    
-    if existing_backups:
-        latest_backup = max(existing_backups, key=os.path.getctime)
-        try:
-            with open(latest_backup, 'r', encoding='utf-8') as f1, open(__file__, 'r', encoding='utf-8') as f2:
-                if f1.read() == f2.read():
-                    needs_backup = False
-        except:
-            pass
-            
-    if needs_backup:
-        os.makedirs(current_backup_folder, exist_ok=True)
-        backup_file_path = os.path.join(current_backup_folder, os.path.basename(__file__))
-        try:
-            shutil.copy2(__file__, backup_file_path)
-        except Exception:
-            pass
+    folder_name = f"{timestamp}{suffix}"
+    current_backup_folder = os.path.join(BACKUP_DIR, folder_name)
+    os.makedirs(current_backup_folder, exist_ok=True)
+    try:
+        shutil.copy2(__file__, os.path.join(current_backup_folder, os.path.basename(__file__)))
+    except Exception:
+        pass
 
 # ==========================================
 # CORE SCRIPT LOGIC
 # ==========================================
 def load_state():
+    default_state = {
+        "usage_count": 0, "cooldown_until": 0.0, "daily_video_count": 0, 
+        "last_activity_timestamp": 0, "last_health_check": 0, "engine_health": True,
+        "last_daily_backup": 0, "last_success_backup": 0
+    }
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r') as f:
                 data = json.load(f)
-                if "daily_video_count" not in data: data["daily_video_count"] = 0
-                if "last_activity_timestamp" not in data: data["last_activity_timestamp"] = 0
-                if "last_health_check" not in data: data["last_health_check"] = 0
-                if "engine_health" not in data: data["engine_health"] = True
+                for k, v in default_state.items():
+                    if k not in data: data[k] = v
                 return data
         except:
             pass
-    return {"usage_count": 0, "cooldown_until": 0.0, "daily_video_count": 0, "last_activity_timestamp": 0, "last_health_check": 0, "engine_health": True}
+    return default_state
 
 def save_state(state):
     with open(STATE_FILE, 'w') as f:
@@ -344,7 +334,6 @@ def update_tracker(music_folder, status, title, artist, duration, platform, link
 
 def main():
     with open(LOCK_FILE, 'w') as f: f.write("active") 
-    verify_and_backup() 
     state = load_state()
     
     while True:
@@ -354,6 +343,12 @@ def main():
         active_reset_dt = now_dt.replace(hour=4, minute=0, second=0, microsecond=0)
         if now_dt < active_reset_dt:
             active_reset_dt -= datetime.timedelta(days=1)
+            
+        # 1. NEW DAILY BACKUP TRIGGER
+        if state.get("last_daily_backup", 0) < active_reset_dt.timestamp():
+            execute_backup()
+            state["last_daily_backup"] = time.time()
+            save_state(state)
             
         if state.get("last_activity_timestamp", 0) < active_reset_dt.timestamp():
             state["daily_video_count"] = 0
@@ -665,6 +660,12 @@ def main():
 
         print("\n" + "="*70)
         print("ALL TASKS COMPLETE! Tracker data has been updated.")
+        
+        # 2. NEW SUCCESS RUN BACKUP TRIGGER
+        if successful_downloads > 0 and state.get("last_success_backup", 0) < active_reset_dt.timestamp():
+            execute_backup(" - Success Run")
+            state["last_success_backup"] = time.time()
+            print("\n\033[92m[SYSTEM] 'Success Run' Snapshot safely archived to vault.\033[0m")
         
         state["usage_count"] = state.get("usage_count", 0) + 1
         state["daily_video_count"] = state.get("daily_video_count", 0) + successful_downloads
