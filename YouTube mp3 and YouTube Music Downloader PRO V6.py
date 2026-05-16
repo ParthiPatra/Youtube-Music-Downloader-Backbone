@@ -52,8 +52,14 @@ def trigger_crash_report(exctype, value, tb, custom_context=""):
     
     healer_path = os.path.join(SCRIPT_DIR, "Music_Healing_Group", "Music_Crash_Healer.py")
     if os.path.exists(healer_path):
+        # NEW: 5-Second Delay Auto-Trigger
+        print("\n\033[93m[SYSTEM] Preparing to launch Emergency Healer in 5 seconds...\033[0m")
+        for i in range(5, 0, -1):
+            sys.stdout.write(f"\rLaunch in: {i}s... \033[K")
+            sys.stdout.flush()
+            time.sleep(1)
+            
         print("\n\033[93m[!] Waking up external Music_Crash_Healer.py...\033[0m")
-        time.sleep(2)
         subprocess.Popen(['start', 'cmd', '/c', sys.executable, healer_path, "AUTO_TRIGGER"], shell=True)
     else:
         print("\n[WARNING] 'Music_Healing_Group\\Music_Crash_Healer.py' not found. Cannot auto-heal.")
