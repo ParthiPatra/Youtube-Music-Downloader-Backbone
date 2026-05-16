@@ -1,77 +1,42 @@
-import sys
 import os
-import subprocess
+import sys
 import time
-import atexit
 import glob
+import shutil
 import datetime
 import socket
-import msvcrt
-import json
-import shutil
-import traceback
 
-os.system('') # Enable ANSI colors early
+# --- CONFIGURATION & PATH SYNC ---
+HEALER_DIR = os.path.dirname(os.path.abspath(__file__))
+MAIN_SCRIPT_DIR = HEALER_DIR 
+MAIN_SCRIPT_NAME = "YouTube mp3 and YouTube Music Downloader PRO V6.py"
+MAIN_SCRIPT_PATH = os.path.join(MAIN_SCRIPT_DIR, MAIN_SCRIPT_NAME)
 
-# ==========================================
-# ADVANCED ERROR CRASH HANDLER SYSTEM
-# ==========================================
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SCRIPT_START_TIME = time.time()
+LOG_FILE_CSV = os.path.join(HEALER_DIR, "Music_Heal_Logs.csv")
+CRASH_REPORT_DIR = os.path.join(MAIN_SCRIPT_DIR, "Music_Script_Error_Data")
 
-def trigger_crash_report(exctype, value, tb, custom_context=""):
-    print("\n\033[91m[CRITICAL SCRIPT CRASH]\033[0m")
-    print("The script encountered a fatal error before it could finish.")
-    print("-" * 56)
-    if custom_context:
-        print(custom_context)
-    traceback.print_exception(exctype, value, tb)
-    print("-" * 56)
-    
-    # User-Requested Folder Structure
-    crash_folder = os.path.join(SCRIPT_DIR, "Music_Script_Error_Data")
-    os.makedirs(crash_folder, exist_ok=True)
-    
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    crash_file = os.path.join(crash_folder, f"Error_Crash_Handler_{timestamp}.txt")
-    
-    run_duration = round(time.time() - SCRIPT_START_TIME, 2)
-    
-    with open(crash_file, 'w', encoding='utf-8') as f:
-        f.write("==================================================\n")
-        f.write("      ADVANCED ERROR CRASH HANDLER REPORT\n")
-        f.write("==================================================\n")
-        f.write(f"DATE & TIME OF CRASH : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"SYSTEM RUNTIME       : {run_duration} seconds before crash\n")
-        f.write(f"CRASH CONTEXT        : {custom_context if custom_context else 'General Execution Failure'}\n")
-        f.write("==================================================\n\n")
-        f.write("[DETAILED PYTHON TRACEBACK]\n")
-        traceback.print_exception(exctype, value, tb, file=f)
-        
-    print(f"\n[SYSTEM] Detailed error report saved to: {crash_folder}")
-    
-    # RELOCATED PATH: Looks for the healer in the exact same directory
-    healer_path = os.path.join(SCRIPT_DIR, "Music_Crash_Healer.py")
-    if os.path.exists(healer_path):
-        print("\n\033[93m[SYSTEM] Preparing to launch Emergency Healer in 5 seconds...\033[0m")
-        for i in range(5, 0, -1):
-            sys.stdout.write(f"\rLaunch in: {i}s... \033[K")
-            sys.stdout.flush()
-            time.sleep(1)
-            
-        print("\n\033[93m[!] Waking up external Music_Crash_Healer.py...\033[0m")
-        subprocess.Popen(['start', 'cmd', '/c', sys.executable, healer_path, "AUTO_TRIGGER"], shell=True)
-    else:
-        print("\n[WARNING] 'Music_Crash_Healer.py' not found. Cannot auto-heal.")
-        
-    input("\nPress Enter to safely close this window...")
+APPDATA_DIR = os.getenv('APPDATA')
+BACKUP_DIR = os.path.join(APPDATA_DIR, 'yt-dlp', 'Music_Script_Backup_Files')
+LOCK_FILE = os.path.join(APPDATA_DIR, 'yt-dlp', 'session.lock')
 
-# Bind the global crash handler
-sys.excepthook = lambda t, v, tb: trigger_crash_report(t, v, tb)
+# =========================================================================
+# PUBLIC RECOVERY ENGINE CONFIGURATION 
+# =========================================================================
+ONLINE_MASTER_URL = "https://raw.githubusercontent.com/ParthiPatra/Youtube-Music-Downloader-Backbone/refs/heads/main/YouTube%20mp3%20and%20YouTube%20Music%20Downloader%20PRO%20V6.py"
 
-# ==========================================
-# CORE NETWORK HELPERS
-# ==========================================
+os.system('') # Enable ANSI colors
+
+def loading_animation(text, duration=2.0):
+    chars = "|/-\\"
+    end_time = time.time() + duration
+    i = 0
+    while time.time() < end_time:
+        sys.stdout.write(f"\r\033[96m[{chars[i % len(chars)]}]\033[0m {text}...")
+        sys.stdout.flush()
+        time.sleep(0.1)
+        i += 1
+    sys.stdout.write(f"\r\033[92m[DONE]\033[0m {text}...          \n")
+
 def is_connected():
     try:
         socket.create_connection(("8.8.8.8", 53), timeout=2)
@@ -79,623 +44,214 @@ def is_connected():
     except OSError:
         return False
 
-def wait_for_network():
-    first_fail = True
-    while True:
-        try:
-            socket.create_connection(("8.8.8.8", 53), timeout=2)
-            if not first_fail:
-                print("\033[92m[NETWORK RESTORED] Internet connection found. Resuming...\033[0m")
-            return
-        except OSError:
-            if first_fail:
-                print("\033[91m[NETWORK ERROR] Connection lost! Waiting for network to return...\033[0m")
-                first_fail = False
-            time.sleep(3)
+def write_heal_log(cause, action_taken, success, method):
+    file_exists = os.path.isfile(LOG_FILE_CSV)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE_CSV, 'a', encoding='utf-8') as f:
+        if not file_exists: f.write("Date & Time,Crash Cause,Action Taken,Success,Heal Method\n")
+        f.write(f'"{timestamp}","{cause}","{action_taken}","{success}","{method}"\n')
 
-# ==========================================
-# DYNAMIC BACKBONE CONNECTION ENGINE (PATH UPDATED)
-# ==========================================
-PARENT_DIR = os.path.dirname(SCRIPT_DIR)
-GRANDPARENT_DIR = os.path.dirname(PARENT_DIR)
+def get_latest_crash_log():
+    if not os.path.exists(CRASH_REPORT_DIR): return None
+    logs = glob.glob(os.path.join(CRASH_REPORT_DIR, 'Error_Crash_Handler_*.txt'))
+    return max(logs, key=os.path.getctime) if logs else None
 
-# Deep Sweep Search: Checks local, parent, and grandparent folders to guarantee connection
-engine_folders = glob.glob(os.path.join(SCRIPT_DIR, "Python v* file"))
-if not engine_folders: engine_folders = glob.glob(os.path.join(PARENT_DIR, "Python v* file"))
-if not engine_folders: engine_folders = glob.glob(os.path.join(GRANDPARENT_DIR, "Python v* file"))
+def analyze_crash():
+    latest_log = get_latest_crash_log()
+    cause = "Unknown Structural/Syntax Error"
+    if latest_log:
+        with open(latest_log, 'r', encoding='utf-8') as f:
+            content = f.read()
+            if "SyntaxError" in content or "IndentationError" in content: cause = "Corrupted Code Structure (Syntax)"
+            elif "ModuleNotFoundError" in content: cause = "Missing Core Dependency"
+            elif "PermissionError" in content: cause = "System Locked File (Permission Denied)"
+            elif "FileNotFoundError" in content: cause = "Target System File Deleted or Missing"
+            else: cause = "Runtime Execution Failure"
+    return cause
 
-if not engine_folders:
-    print("\n\033[91m[CRITICAL ERROR] Core Engine Backbone NOT FOUND!\033[0m")
-    print("The private environment is completely missing from this folder.")
-    print(">>> Please manually start 'Setup.bat' to download the missing files.")
-    input("\nPress Enter to exit...")
-    sys.exit(1)
+def diagnose_backbone():
+    PARENT_DIR = os.path.dirname(MAIN_SCRIPT_DIR)
+    GRANDPARENT_DIR = os.path.dirname(PARENT_DIR)
+    engine_folders = glob.glob(os.path.join(MAIN_SCRIPT_DIR, "Python v* file"))
+    if not engine_folders: engine_folders = glob.glob(os.path.join(PARENT_DIR, "Python v* file"))
+    if not engine_folders: engine_folders = glob.glob(os.path.join(GRANDPARENT_DIR, "Python v* file"))
+    if not engine_folders: return False, "Complete Python Engine Missing"
+    engine_path = engine_folders[0]
+    missing = []
+    if not glob.glob(os.path.join(engine_path, "*yt-dlp*.exe")): missing.append("yt-dlp.exe")
+    if not glob.glob(os.path.join(engine_path, "*ffmpeg*.exe")): missing.append("ffmpeg.exe")
+    if not os.path.exists(os.path.join(engine_path, "python.exe")): missing.append("python.exe")
+    return (True, "Backbone Intact") if not missing else (False, f"Missing core binaries: {', '.join(missing)}")
 
-PRIVATE_ENGINE_PATH = engine_folders[0]
-PRIVATE_PYTHON = os.path.join(PRIVATE_ENGINE_PATH, "python.exe")
-
-# --- SMART NAMING LOCATOR ---
-def get_smart_exe(folder, possible_names):
-    if not os.path.exists(folder): return None
-    for f in os.listdir(folder):
-        f_lower = f.lower()
-        for name in possible_names:
-            if f_lower == name or f_lower == name + ".exe":
-                return os.path.join(folder, f)
-    return None
-
-YTDLP_EXE = get_smart_exe(PRIVATE_ENGINE_PATH, ["yt-dlp", "yt_dlp", "yt-dlo", "ytdlp"])
-FFMPEG_EXE = get_smart_exe(PRIVATE_ENGINE_PATH, ["ffmpeg"])
-FFPROBE_EXE = get_smart_exe(PRIVATE_ENGINE_PATH, ["ffprobe"])
-
-# 1. Enforce Execution via Private Python Bubble
-if os.path.normpath(sys.executable) != os.path.normpath(PRIVATE_PYTHON):
-    if not os.path.exists(PRIVATE_PYTHON):
-        print("\n\033[91m[CRITICAL ERROR] python.exe is missing from the engine folder.\033[0m")
-        print(">>> Please start 'Setup.bat' file for diagnosis.")
-        input("\nPress Enter to exit...")
-        sys.exit(1)
-    subprocess.run([PRIVATE_PYTHON, __file__] + sys.argv[1:])
-    sys.exit(0)
-
-# ==========================================
-# INITIALIZATION & CONFIGURATION
-# ==========================================
-SCRIPT_VERSION = 6.0
-
-APPDATA_DIR = os.getenv('APPDATA')
-CONFIG_DIR = os.path.join(APPDATA_DIR, 'yt-dlp')
-CONFIG_FILE = os.path.join(CONFIG_DIR, 'music_config.txt')
-STATE_FILE = os.path.join(CONFIG_DIR, 'music_usage_state.json')
-BACKUP_DIR = os.path.join(CONFIG_DIR, 'Music_Script_Backup_Files') 
-LOCK_FILE = os.path.join(CONFIG_DIR, 'session.lock')
-
-if not os.path.exists(CONFIG_DIR):
+def test_script_health(script_path):
+    if not os.path.exists(script_path): return False
     try:
-        os.makedirs(CONFIG_DIR)
-    except Exception as e:
-        print(f"[CRITICAL ERROR] Could not create config folder in AppData: {e}")
-        input("Press Enter to exit...")
-        sys.exit(1)
+        with open(script_path, 'r', encoding='utf-8') as f: source = f.read()
+        compile(source, script_path, 'exec')
+        return True
+    except: return False
 
-def remove_lock():
+# ==========================================
+# ADVANCED OFFLINE HEALING (SUCCESS-PRIORITY)
+# ==========================================
+def heal_from_offline_vault():
+    if not os.path.exists(BACKUP_DIR):
+        return False
+    
+    all_backups = glob.glob(os.path.join(BACKUP_DIR, '*\\*.py'))
+    if not all_backups:
+        return False
+        
+    success_backups = []
+    standard_backups = []
+    
+    # Sort into Priority and Standard lists based on folder name
+    for backup in all_backups:
+        folder_name = os.path.basename(os.path.dirname(backup))
+        if folder_name.endswith("- Success Run"):
+            success_backups.append(backup)
+        else:
+            standard_backups.append(backup)
+            
+    # Sort both lists individually by newest creation time first
+    success_backups.sort(key=os.path.getctime, reverse=True)
+    standard_backups.sort(key=os.path.getctime, reverse=True)
+    
+    # Combine them (Success runs are ALWAYS checked and restored first)
+    prioritized_backups = success_backups + standard_backups
+    
+    print(f"    > Found {len(prioritized_backups)} offline snapshots in the Vault ({len(success_backups)} Priority Success Runs). Validating...")
+    
+    for backup in prioritized_backups:
+        if test_script_health(backup):
+            try:
+                shutil.copy2(backup, MAIN_SCRIPT_PATH)
+                folder_used = os.path.basename(os.path.dirname(backup))
+                if folder_used.endswith("- Success Run"):
+                    print(f"    > \033[92mValidated and applied pristine Priority Snapshot: {folder_used}\033[0m")
+                else:
+                    print(f"    > \033[92mValidated and applied pristine snapshot: {folder_used}\033[0m")
+                return True
+            except:
+                continue
+    return False
+
+def heal_from_online_source():
+    if not is_connected():
+        print("    \033[91m[!] Online Support Failed: No active internet connection detected.\033[0m")
+        return False
+    print("    > Contacting Online Public Master Repository Vault...")
+    temp_file = os.path.join(HEALER_DIR, "temp_online_script.py")
+    curl_cmd = f'curl -s -L -o "{temp_file}" "{ONLINE_MASTER_URL}"'
+    ps_cmd = f'powershell -Command "Invoke-WebRequest -Uri \'{ONLINE_MASTER_URL}\' -OutFile \'{temp_file}\'"'
+    os.system(curl_cmd)
+    if not os.path.exists(temp_file) or os.path.getsize(temp_file) == 0: os.system(ps_cmd)
+    if not os.path.exists(temp_file) or os.path.getsize(temp_file) == 0:
+        print("    \033[91m[!] Failed to connect to the cloud master file stream.\033[0m")
+        return False
+    print("    > Download complete. Running sandbox code compilation checks...")
+    if test_script_health(temp_file):
+        try:
+            shutil.copy2(temp_file, MAIN_SCRIPT_PATH)
+            if not os.path.exists(BACKUP_DIR): os.makedirs(BACKUP_DIR)
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            online_backup_folder = os.path.join(BACKUP_DIR, f"{timestamp} - Online_Backup_File")
+            os.makedirs(online_backup_folder, exist_ok=True)
+            shutil.copy2(temp_file, os.path.join(online_backup_folder, MAIN_SCRIPT_NAME))
+            
+            existing_vault_folders = sorted(glob.glob(os.path.join(BACKUP_DIR, "*")), key=os.path.getctime, reverse=True)
+            if len(existing_vault_folders) > 10:
+                for old_folder in existing_vault_folders[10:]:
+                    try: shutil.rmtree(old_folder)
+                    except: pass
+            
+            os.remove(temp_file)
+            print("    > \033[92mSuccess: Compiled and applied pristine public master snapshot.\033[0m")
+            print(f"    > \033[94m[VAULT UPDATED] Cloud copy saved locally as: {timestamp} - Online_Backup_File\033[0m")
+            return True
+        except: pass
+    if os.path.exists(temp_file): os.remove(temp_file)
+    return False
+
+def purge_ghost_files():
     if os.path.exists(LOCK_FILE):
         try: os.remove(LOCK_FILE)
         except: pass
+    pycache_dir = os.path.join(MAIN_SCRIPT_DIR, "__pycache__")
+    if os.path.exists(pycache_dir):
+        try: shutil.rmtree(pycache_dir)
+        except: pass
 
-atexit.register(remove_lock)
-
-# ==========================================
-# INTERNAL BACKUP SYSTEM
-# ==========================================
-def verify_and_backup():
-    if not os.path.exists(BACKUP_DIR):
-        os.makedirs(BACKUP_DIR)
-        
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    current_backup_folder = os.path.join(BACKUP_DIR, timestamp)
-    
-    existing_backups = glob.glob(os.path.join(BACKUP_DIR, '*\\*.py'))
-    needs_backup = True
-    
-    if existing_backups:
-        latest_backup = max(existing_backups, key=os.path.getctime)
-        try:
-            with open(latest_backup, 'r', encoding='utf-8') as f1, open(__file__, 'r', encoding='utf-8') as f2:
-                if f1.read() == f2.read():
-                    needs_backup = False
-        except:
-            pass
-            
-    if needs_backup:
-        os.makedirs(current_backup_folder, exist_ok=True)
-        backup_file_path = os.path.join(current_backup_folder, os.path.basename(__file__))
-        try:
-            shutil.copy2(__file__, backup_file_path)
-        except Exception:
-            pass
-
-# ==========================================
-# CORE SCRIPT LOGIC
-# ==========================================
-def load_state():
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, 'r') as f:
-                data = json.load(f)
-                if "daily_video_count" not in data: data["daily_video_count"] = 0
-                if "last_activity_timestamp" not in data: data["last_activity_timestamp"] = 0
-                if "last_health_check" not in data: data["last_health_check"] = 0
-                if "engine_health" not in data: data["engine_health"] = True
-                return data
-        except:
-            pass
-    return {"usage_count": 0, "cooldown_until": 0.0, "daily_video_count": 0, "last_activity_timestamp": 0, "last_health_check": 0, "engine_health": True}
-
-def save_state(state):
-    with open(STATE_FILE, 'w') as f:
-        json.dump(state, f)
-
-def countdown_timer(seconds):
-    while seconds > 0:
-        mins, secs = divmod(seconds, 60)
-        hours, mins = divmod(mins, 60)
-        time_str = f"{int(hours):02d}:{int(mins):02d}:{int(secs):02d}"
-        sys.stdout.write(f"\rSleep Time Remaining: [{time_str}] \033[K")
-        sys.stdout.flush()
-        time.sleep(1)
-        seconds -= 1
-    print("\n\nCooldown complete! Resuming...")
-
-def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-def ask_playlist_timer(link):
-    print(f"\n\033[93m[!] PLAYLIST SPOTTED:\033[0m {link}")
-    print("Do you want to download the entire playlist? (y/n)")
-    
-    timeout = 15
-    start_time = time.time()
-    invalid_attempts = 0
-    
-    while True:
-        elapsed = time.time() - start_time
-        remaining = int(timeout - elapsed)
-        
-        if remaining <= 0:
-            print("\nTimer hit 0. Defaulting to YES (Adding Playlist to queue).")
-            return True
-
-        sys.stdout.write(f"\rTime remaining: {remaining}s ... Press 'y' or 'n': ")
-        sys.stdout.flush()
-        
-        if msvcrt.kbhit():
-            char = msvcrt.getch().decode('utf-8', 'ignore').lower()
-            if char == 'y':
-                print("\nAccepted! Adding playlist to queue.")
-                return True
-            elif char == 'n':
-                print("\nDeclined! Terminating playlist link.")
-                return False
-            else:
-                invalid_attempts += 1
-                print(f"\n[ERROR] Invalid input. Please press only 'y' or 'n'. ({invalid_attempts}/4)")
-                if invalid_attempts >= 4:
-                    print("\n[CRITICAL] Too many invalid inputs exceeded. Terminating process.")
-                    sys.exit(1)
-                
-                start_time = time.time() - (15 - remaining) 
-        time.sleep(0.1)
-
-def get_music_folder():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            saved_path = f.read().strip()
-        if os.path.exists(saved_path):
-            return saved_path
+def run_healer(is_auto=False):
+    print("\033[96m========================================================\033[0m")
+    print("\033[96m           NEXT-GEN OFFLINE & ONLINE EMERGENCY HEALER   \033[0m")
+    print("\033[96m========================================================\033[0m")
+    if is_auto:
+        print("\n\033[93m[AUTO-MODE] Healer was triggered dynamically by a script crash.\033[0m")
+        print(" > Purging ghost locks and corrupted memory caches...")
+        purge_ghost_files()
+    else:
+        print("\n\033[93m[MANUAL OVERRIDE] User directly initiated the Emergency Healer.\033[0m")
+        loading_animation("Initializing Deep Scan & Memory Allocation", 2.0)
+        purge_ghost_files()
+        loading_animation("Purging ghost locks and corrupted caches", 1.5)
+    print("\n\033[93m[STEP 1] Diagnosing External Environment...\033[0m")
+    if not is_auto: loading_animation("Verifying Core Engine Backbone Integrity", 2.0)
+    backbone_ok, backbone_msg = diagnose_backbone()
+    if not backbone_ok:
+        print(f"\n\033[91m[CRITICAL] Backbone Error: {backbone_msg}\033[0m")
+        print("\033[93mThe script code is likely fine, but your media tools are missing.\033[0m")
+        print(">> FIX: Please run 'Setup.bat' to re-download the missing components.")
+        input("\nPress Enter to exit the Healer...")
+        return
+    print(" > \033[92mEnvironment Verified: All core engines are active.\033[0m")
+    if is_auto:
+        print("\n\033[93m[STEP 2] Analyzing Crash Reports...\033[0m")
+        cause = analyze_crash()
+        print(f" > Identified Cause: \033[95m{cause}\033[0m")
+    else: cause = "Manual Scan Requested"
+    print("\n\033[93m[STEP 3] Testing Main Script Structural Health...\033[0m")
+    if not is_auto: loading_animation("Compiling Main Script Syntax & Code Validation", 3.0)
+    if test_script_health(MAIN_SCRIPT_PATH):
+        if not is_auto:
+            print("\n\033[92m========================================================================================\033[0m")
+            print("\033[92mYour 'YouTube mp3 and YouTube Music Downloader PRO V6' is totally fine and healthy. no issues found.\033[0m")
+            print("\033[92m========================================================================================\033[0m")
         else:
-            print(f"\n[WARNING] Saved download folder is missing: {saved_path}")
-
-    while True:
-        print("\nDownload folder missing or not set.")
-        new_path = input("Please paste the full path to your desired Music folder: ").strip()
-        new_path = new_path.strip('"').strip("'")
-        
-        if new_path:
-            if not os.path.exists(new_path):
-                print(f"Folder does not exist. Creating: {new_path}")
-                try:
-                    os.makedirs(new_path)
-                except Exception as e:
-                    print(f"Error creating folder: {e}. Please try a different path.")
-                    continue
-            
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                f.write(new_path)
-            return new_path
-
-def get_next_serial(log_file):
-    if not os.path.exists(log_file):
-        return 1
-    with open(log_file, 'r', encoding='utf-8') as f:
-        count = sum(1 for line in f if line.strip() and line.strip()[0].isdigit())
-        return count + 1
-
-def format_size(size_bytes):
-    if size_bytes == 0: return "N/A"
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if size_bytes < 1024.0:
-            return f"{size_bytes:.2f} {unit}"
-        size_bytes /= 1024.0
-    return "N/A"
-
-def get_latest_file_size(folder, extension=".mp3"):
-    try:
-        files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(extension)]
-        if not files: return "N/A"
-        latest_file = max(files, key=os.path.getctime)
-        return format_size(os.path.getsize(latest_file))
-    except:
-        return "N/A"
-
-def update_tracker(music_folder, status, title, artist, duration, platform, link, file_size, error_cause="None"):
-    tracker_folder = os.path.join(music_folder, "Youtube Music Tracker Data")
-    if not os.path.exists(tracker_folder):
-        os.makedirs(tracker_folder)
-        
-    tracker_file = os.path.join(tracker_folder, "Download_Tracker.txt")
-    serial_no = get_next_serial(tracker_file)
-    date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    if not os.path.exists(tracker_file) or os.path.getsize(tracker_file) == 0:
-        with open(tracker_file, 'w', encoding='utf-8') as f:
-            f.write(f"{'S.No':<5} | {'Date & Time':<20} | {'Status':<8} | {'Platform':<15} | {'File Size':<10} | {'Length':<8} | {'Artist':<20} | {'Title':<45} | {'Error Cause'} \n")
-            f.write("="*160 + "\n")
-            
-    with open(tracker_file, 'a', encoding='utf-8') as f:
-        clean_artist = (artist[:17] + '...') if len(artist) > 20 else artist
-        clean_title = (title[:42] + '...') if len(title) > 45 else title
-        clean_error = (error_cause[:30] + '...') if len(error_cause) > 30 else error_cause
-        
-        row = f"{serial_no:<5} | {date_str:<20} | {status:<8} | {platform:<15} | {file_size:<10} | {duration:<8} | {clean_artist:<20} | {clean_title:<45} | {clean_error}\n"
-        link_row = f"      | Link: {link}\n"
-        f.write(row)
-        f.write(link_row)
-        f.write("-" * 160 + "\n")
-
-def main():
-    with open(LOCK_FILE, 'w') as f: f.write("active") 
-    verify_and_backup() 
-    state = load_state()
-    
-    while True:
-        clear_screen()
-        
-        now_dt = datetime.datetime.now()
-        active_reset_dt = now_dt.replace(hour=4, minute=0, second=0, microsecond=0)
-        if now_dt < active_reset_dt:
-            active_reset_dt -= datetime.timedelta(days=1)
-            
-        if state.get("last_activity_timestamp", 0) < active_reset_dt.timestamp():
-            state["daily_video_count"] = 0
-            state["usage_count"] = 0 
-            save_state(state)
-            
-        if state.get("last_health_check", 0) < active_reset_dt.timestamp():
-            clear_screen()
-            print("\n" + "═"*70)
-            print(" [SYSTEM] Initializing Master Backbone Health Check... Please wait.")
-            print("═"*70)
-            print(f" Target Engine : {os.path.basename(PRIVATE_ENGINE_PATH)}")
-            time.sleep(1)
-
-            missing_files = []
-            if not YTDLP_EXE: missing_files.append("yt-dlp.exe")
-            if not FFMPEG_EXE: missing_files.append("ffmpeg.exe")
-            if not FFPROBE_EXE: missing_files.append("ffprobe.exe")
-
-            if missing_files:
-                print(f"\n\033[91m[CRITICAL ERROR] Missing Required Files:\033[0m {', '.join(missing_files)}")
-                print("Your private environment is incomplete.")
-                print("\033[93m>>> Please manually start 'Setup.bat' to download the missing files.\033[0m")
-                input("\nPress Enter to exit...")
-                sys.exit(1)
-
-            corrupted_files = []
-            
-            print(" > Verifying yt-dlp core...")
-            try:
-                res_yt = subprocess.run([YTDLP_EXE, '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=0x08000000)
-                if res_yt.returncode != 0 or not res_yt.stdout.strip()[:4].isdigit(): 
-                    corrupted_files.append("yt-dlp.exe")
-            except Exception:
-                corrupted_files.append("yt-dlp.exe")
-
-            print(" > Verifying FFmpeg media suite...")
-            try:
-                res_ff = subprocess.run([FFMPEG_EXE, '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=0x08000000)
-                if res_ff.returncode != 0 or "ffmpeg version" not in res_ff.stdout.lower():
-                    corrupted_files.append("ffmpeg.exe")
-            except Exception:
-                corrupted_files.append("ffmpeg.exe")
-
-            if corrupted_files:
-                print(f"\n\033[91m[CRITICAL ERROR] Files are Corrupted:\033[0m {', '.join(corrupted_files)}")
-                print("\033[93m>>> Please start setup file for diagnosis.\033[0m")
-                input("\nPress Enter to exit...")
-                sys.exit(1)
-
-            print("\n\033[92m[SUCCESS] All private backbone resources are located and connected.\033[0m")
-            state["engine_health"] = True
-            state["last_health_check"] = time.time()
-            save_state(state)
-            time.sleep(2)
-            clear_screen()
-            
-        network_status = "\033[92mNetwork Connected\033[0m" if is_connected() else "\033[91mNetwork connection error\033[0m"
-        current_quota = state.get('daily_video_count', 0)
-        
-        engine_state = "\033[92mHealthy\033[0m" if state.get("engine_health", True) else "\033[91mDamaged\033[0m"
-        recovery_state = "\033[92mCloud Ready\033[0m" if is_connected() else "\033[93mLocal Offline\033[0m"
-        
-        print("\033[96m╔" + "═"*70 + "╗")
-        print("║" + " "*70 + "║")
-        print("║" + "YOUTUBE SMART MUSIC & PLAYLIST DOWNLOADER".center(70) + "║")
-        print("║" + "(PRO EDITION) - VERSION 6".center(70) + "║")
-        print("║" + " "*70 + "║")
-        print("╠" + "═"*70 + "╣")
-        print("║" + "By: Perk-Senpai & Google Gemini | Date Created: 15/05/2026".center(70) + "║")
-        print("╚" + "═"*70 + "╝\033[0m")
-        print(f" Status: {network_status}  |  \033[95mDaily Music Quota: {current_quota}/20\033[0m")
-        print(f" Engine: {engine_state}  |  Recovery: {recovery_state}\n")
-        
-        if 15 <= current_quota < 20:
-            left = 20 - current_quota
-            print(f"\033[91m\033[5m !! WARNING: YOU ONLY HAVE {left} MUSIC DOWNLOADS LEFT TODAY !! \033[0m\n")
-        elif current_quota >= 20:
-            print(f"\033[91m\033[5m !! WARNING: YOUR DAILY QUOTA IS FULLY REACHED !! Wait for 4:00 AM reset.\033[0m\n")
-
-        current_time = time.time()
-        cooldown_end = state.get("cooldown_until", 0)
-        
-        if current_time < cooldown_end:
-            remaining = int(cooldown_end - current_time)
-            print("[LIMITER] Script is currently resting to prevent YouTube IP bans.")
-            print("No other tasks or link pasting are available until the timer finishes.")
-            countdown_timer(remaining)
-            state["cooldown_until"] = 0
-            save_state(state)
-            continue 
-            
-        music_folder = get_music_folder()
-        print(f"\nSaving to: \033[93m{music_folder}\033[0m")
-        print("\nPaste up to 5 YouTube/YouTube Music links.")
-        print("(You can separate links with commas or just spaces)")
-        
-        raw_input_str = input("\nPaste Links Here: ").strip()
-        if not raw_input_str:
-            continue
-
-        wait_for_network()
-
-        parsed_links = raw_input_str.replace(',', ' ').split()
-        unique_links = []
-        for l in parsed_links:
-            clean_link = l.strip()
-            if clean_link and clean_link not in unique_links:
-                unique_links.append(clean_link)
-        
-        links = unique_links
-        
-        if len(links) > 5:
-            print("\n[WARNING] More than 5 links detected. Only the first 5 will be processed.")
-            links = links[:5]
-
-        active_links = []
-        for link in links:
-            if "list=" in link:
-                wants_playlist = ask_playlist_timer(link)
-                if not wants_playlist:
-                    update_tracker(music_folder, "SKIPPED", "N/A", "N/A", "N/A", "Playlist", link, "N/A", "User declined playlist")
-                    continue
-            active_links.append(link)
-
-        if not active_links:
-            input("\nNo links remaining to process. Press Enter to restart.")
-            continue
-
-        print(f"\nScanning {len(active_links)} link(s)... Please wait.")
-        
-        videos_info = []
-        
-        for idx, link in enumerate(active_links):
-            wait_for_network()
-            try:
-                cmd_scan = [
-                    YTDLP_EXE,
-                    '-J', 
-                    '--flat-playlist',
-                    '--no-warnings',
-                    '--extractor-args', 'youtube:client=android,ios',
-                    link
-                ]
-                
-                res = subprocess.run(cmd_scan, capture_output=True, text=True, encoding='utf-8', errors='ignore', creationflags=0x08000000)
-                
-                if res.returncode != 0:
-                    error_msg = res.stderr.strip() if res.stderr else "Unknown scan error"
-                    raise Exception(error_msg)
-                    
-                info = json.loads(res.stdout)
-                platform = "YouTube Music" if "music.youtube" in link.lower() else "YouTube"
-                
-                if 'entries' in info:
-                    playlist_title = info.get('title', 'Unknown Playlist')
-                    print(f"[{idx+1}] PLAYLIST DETECTED: {playlist_title} ({len(list(info.get('entries', [])))} tracks)")
-                    
-                    for entry in info['entries']:
-                        if not entry: continue
-                        title = entry.get('title', 'Unknown Title')
-                        artist = entry.get('uploader') or 'N/A'
-                        duration_sec = entry.get('duration', 0)
-                        duration_str = str(datetime.timedelta(seconds=duration_sec)) if duration_sec else 'N/A'
-                        entry_link = entry.get('url') or entry.get('id')
-                        if not entry_link.startswith('http'):
-                            entry_link = f"https://www.youtube.com/watch?v={entry_link}"
-                        
-                        videos_info.append({
-                            'link': entry_link,
-                            'title': title,
-                            'artist': artist,
-                            'duration': duration_str,
-                            'platform': platform,
-                            'playlist_folder': playlist_title 
-                        })
-                else:
-                    title = info.get('title', 'Unknown Title')
-                    artist = info.get('artist') or info.get('uploader') or 'N/A'
-                    duration_sec = info.get('duration', 0)
-                    duration_str = str(datetime.timedelta(seconds=duration_sec)) if duration_sec else 'N/A'
-                    
-                    videos_info.append({
-                        'link': link,
-                        'title': title,
-                        'artist': artist,
-                        'duration': duration_str,
-                        'platform': platform,
-                        'playlist_folder': None
-                    })
-            
-            except Exception as e:
-                print(f"[{idx+1}] FAILED TO SCAN: {link}")
-                update_tracker(music_folder, "ERROR", "N/A", "N/A", "N/A", "Unknown", link, "N/A", "Scan Failed")
-
-        if not videos_info:
-            input("\nNo valid tracks to download. Press Enter to restart.")
-            continue
-            
-        valid_count = len(videos_info)
-
-        if current_quota + valid_count > 20:
-            allowed_slots = max(0, 20 - current_quota)
-            if allowed_slots == 0:
-                print(f"\n[LIMITER] Daily music quota exceeds! (Max 20/day).")
-                print("A sleep timer will now activate. Please wait until 4:00 AM to reset the day quota.")
-                now_dt_check = datetime.datetime.now()
-                next_reset_dt = now_dt_check.replace(hour=4, minute=0, second=0, microsecond=0)
-                if now_dt_check >= next_reset_dt: next_reset_dt += datetime.timedelta(days=1)
-                state["cooldown_until"] = next_reset_dt.timestamp()
-                state["last_activity_timestamp"] = time.time()
-                save_state(state)
-                time.sleep(4)
-                continue 
-            else:
-                print(f"\n\033[91m[WARNING] You are gonna hit full daily quota!\033[0m")
-                print(f"You scanned {valid_count} valid tracks (including playlists), but only {allowed_slots} slot(s) remain today.")
-                print("Only the following track(s) will proceed:")
-                for i in range(allowed_slots):
-                    print(f"  {i+1}. {videos_info[i]['title']}")
-                
-                print("")
-                for i in range(10, 0, -1):
-                    sys.stdout.write(f"\rProceeding in {i} seconds... \033[K")
-                    sys.stdout.flush()
-                    time.sleep(1)
-                print("\n")
-                
-                videos_info = videos_info[:allowed_slots]
-                valid_count = allowed_slots
-                
-        print("\n" + "="*70)
-        print("                   QUEUE SUMMARY")
-        print("="*70)
-        for idx, v in enumerate(videos_info):
-             print(f"[{idx+1}] {v['title']}\n    Source: {v['platform']} | Artist: {v['artist']}")
-        print("="*70)
-
-        input("\nPress Enter to begin downloading the queue...")
-        
-        successful_downloads = 0
-
-        for idx, v in enumerate(videos_info):
-            print("\n" + "="*70)
-            print(f"Processing ({idx+1}/{len(videos_info)}): {v['title']}")
-            
-            if v['playlist_folder']:
-                save_path = os.path.join(music_folder, v['playlist_folder'], '%(title)s.%(ext)s')
-                target_folder = os.path.join(music_folder, v['playlist_folder'])
-            else:
-                save_path = os.path.join(music_folder, '%(title)s.%(ext)s')
-                target_folder = music_folder
-            
-            cmd = [
-                YTDLP_EXE, 
-                '-x', 
-                '--audio-format', 'mp3', 
-                '--audio-quality', '0', 
-                '--embed-thumbnail', 
-                '--embed-metadata', 
-                '--parse-metadata', 'playlist_index:%(track_number)s',
-                '--extractor-args', 'youtube:client=android,ios',
-                '--ffmpeg-location', PRIVATE_ENGINE_PATH, 
-                '--no-warnings',
-                '-o', save_path,
-                v['link']
-            ]
-            
-            success = False
-            error_reason = "None"
-            
-            for attempt in range(1, 4):
-                wait_for_network()
-                try:
-                    if attempt > 1:
-                        print(f"-> Retry Attempt {attempt}/3...")
-                        
-                    result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore', creationflags=0x08000000)
-                    success = True
-                    break 
-                    
-                except subprocess.CalledProcessError as e:
-                    error_out = e.stderr.strip() if e.stderr else str(e)
-                    error_reason = "Unknown Error"
-                    for line in error_out.split('\n'):
-                        if "ERROR:" in line:
-                            error_reason = line.split("ERROR:")[-1].strip()
-                            break
-                            
-                    print(f"\033[91m[ERROR] Attempt {attempt} failed: {error_reason}\033[0m")
-                    time.sleep(2)
-            
-            if success:
-                successful_downloads += 1
-                file_size = get_latest_file_size(target_folder)
-                update_tracker(
-                    music_folder=music_folder, status="SUCCESS", title=v['title'], 
-                    artist=v['artist'], duration=v['duration'], platform=v['platform'], 
-                    link=v['link'], file_size=file_size, error_cause="None"
-                )
-                print(f"SUCCESS: Logged to Tracker. Final Size: {file_size}")
-            else:
-                print(f"\n[CRITICAL] Failed 3 times. Bypassing track: {v['title']}")
-                update_tracker(
-                    music_folder=music_folder, status="ERROR", title=v['title'], 
-                    artist=v['artist'], duration=v['duration'], platform=v['platform'], 
-                    link=v['link'], file_size="N/A", error_cause=error_reason
-                )
-
-        print("\n" + "="*70)
-        print("ALL TASKS COMPLETE! Tracker data has been updated.")
-        
-        state["usage_count"] = state.get("usage_count", 0) + 1
-        state["daily_video_count"] = state.get("daily_video_count", 0) + successful_downloads
-        state["last_activity_timestamp"] = time.time()
-        
-        if state["usage_count"] >= 10:
-            state["cooldown_until"] = time.time() + (5 * 3600)
-            state["usage_count"] = 0 
-            print("\n[LIMITER] 10 continuous uses reached! 5-Hour sleep timer activated.")
-        elif successful_downloads >= 5:
-            state["cooldown_until"] = time.time() + 300 
-            print("\n[LIMITER] 5 valid tracks successfully processed! 5-Minute sleep timer activated.")
-        elif successful_downloads == 4:
-            state["cooldown_until"] = time.time() + 150 
-            print("\n[LIMITER] 4 valid tracks successfully processed! 2.5-Minute sleep timer activated.")
-        elif successful_downloads == 3:
-            state["cooldown_until"] = time.time() + 60  
-            print("\n[LIMITER] 3 valid tracks successfully processed! 1-Minute sleep timer activated.")
-        elif successful_downloads in [1, 2]:
-            state["cooldown_until"] = time.time() + 10 
-            print(f"\n[LIMITER] {successful_downloads} valid track(s) successfully processed! 10-Second sleep timer activated.")
-            
-        save_state(state)
-        
-        input("Press Enter to download more music...")
+            print("\n\033[92m[HEALTHY] The main music script is structurally intact.\033[0m")
+            print("No code healing is required.")
+        input("\nPress Enter to exit...")
+        return
+    print("\n\033[91m[!] CODE DAMAGE DETECTED. Initiating Recovery Protocols...\033[0m")
+    time.sleep(1)
+    method_used, heal_success = "None", False
+    print("\n--> Accessing [OFFLINE VAULT RECOVERY]...")
+    if heal_from_offline_vault():
+        print("    \033[92m[SUCCESS] Restored from local validated backup.\033[0m")
+        method_used, heal_success = "Offline Vault Backup", True
+    else:
+        print("    \033[91m[FAILED] No valid local backups found in the vault.\033[0m")
+        print("\n--> Accessing [ONLINE RECOVERY Vault]...")
+        if heal_from_online_source():
+            print("    \033[92m[SUCCESS] Restored from Cloud Master Repository.\033[0m")
+            method_used, heal_success = "Public Cloud Support", True
+        else:
+            print("    \033[91m[FAILED] Cloud recovery unavailable or connection dropped.\033[0m")
+    if heal_success:
+        print("\nVerifying applied repairs...")
+        if test_script_health(MAIN_SCRIPT_PATH):
+            print("\n\033[92m========================================================\033[0m")
+            print("\033[92m[SUCCESS] The script has been completely healed!\033[0m")
+            print("\033[92m========================================================\033[0m")
+            write_heal_log(cause, "Overwrote corrupted file with pristine code", "Yes", method_used)
+        else:
+            print("\n\033[91m[CRITICAL] Repair applied, but structural damage persists.\033[0m")
+            write_heal_log(cause, "Applied repair, but test failed", "No", method_used)
+    else:
+        print("\n\033[91m[FATAL] ALL RECOVERY SYSTEMS FAILED. Manual script replacement required.\033[0m")
+        write_heal_log(cause, "Failed to find valid code source locally or online", "No", method_used)
+    print("\nLogs have been updated in: Music_Heal_Logs.csv")
+    input("\nPress Enter to exit the Healer module...")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        remove_lock()
-        print("\n\n\033[93m[!] Process terminated by user.\033[0m")
-        sys.exit(0)
+    run_healer(len(sys.argv) > 1 and sys.argv[1].upper() == "AUTO_TRIGGER")
