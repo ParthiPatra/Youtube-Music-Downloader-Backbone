@@ -50,9 +50,9 @@ def trigger_crash_report(exctype, value, tb, custom_context=""):
         
     print(f"\n[SYSTEM] Detailed error report saved to: {crash_folder}")
     
-    healer_path = os.path.join(SCRIPT_DIR, "Music_Healing_Group", "Music_Crash_Healer.py")
+    # RELOCATED PATH: Looks for the healer in the exact same directory
+    healer_path = os.path.join(SCRIPT_DIR, "Music_Crash_Healer.py")
     if os.path.exists(healer_path):
-        # NEW: 5-Second Delay Auto-Trigger
         print("\n\033[93m[SYSTEM] Preparing to launch Emergency Healer in 5 seconds...\033[0m")
         for i in range(5, 0, -1):
             sys.stdout.write(f"\rLaunch in: {i}s... \033[K")
@@ -62,7 +62,7 @@ def trigger_crash_report(exctype, value, tb, custom_context=""):
         print("\n\033[93m[!] Waking up external Music_Crash_Healer.py...\033[0m")
         subprocess.Popen(['start', 'cmd', '/c', sys.executable, healer_path, "AUTO_TRIGGER"], shell=True)
     else:
-        print("\n[WARNING] 'Music_Healing_Group\\Music_Crash_Healer.py' not found. Cannot auto-heal.")
+        print("\n[WARNING] 'Music_Crash_Healer.py' not found. Cannot auto-heal.")
         
     input("\nPress Enter to safely close this window...")
 
@@ -94,14 +94,15 @@ def wait_for_network():
             time.sleep(3)
 
 # ==========================================
-# DYNAMIC BACKBONE CONNECTION ENGINE
+# DYNAMIC BACKBONE CONNECTION ENGINE (PATH UPDATED)
 # ==========================================
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+GRANDPARENT_DIR = os.path.dirname(PARENT_DIR)
 
-# Smart Search: Checks local folder first, then checks the parent folder
+# Deep Sweep Search: Checks local, parent, and grandparent folders to guarantee connection
 engine_folders = glob.glob(os.path.join(SCRIPT_DIR, "Python v* file"))
-if not engine_folders:
-    engine_folders = glob.glob(os.path.join(PARENT_DIR, "Python v* file"))
+if not engine_folders: engine_folders = glob.glob(os.path.join(PARENT_DIR, "Python v* file"))
+if not engine_folders: engine_folders = glob.glob(os.path.join(GRANDPARENT_DIR, "Python v* file"))
 
 if not engine_folders:
     print("\n\033[91m[CRITICAL ERROR] Core Engine Backbone NOT FOUND!\033[0m")
@@ -113,7 +114,7 @@ if not engine_folders:
 PRIVATE_ENGINE_PATH = engine_folders[0]
 PRIVATE_PYTHON = os.path.join(PRIVATE_ENGINE_PATH, "python.exe")
 
-# --- SMART NAMING LOCATOR (Case-Insensitive & Variation Tolerant) ---
+# --- SMART NAMING LOCATOR ---
 def get_smart_exe(folder, possible_names):
     if not os.path.exists(folder): return None
     for f in os.listdir(folder):
@@ -134,7 +135,6 @@ if os.path.normpath(sys.executable) != os.path.normpath(PRIVATE_PYTHON):
         print(">>> Please start 'Setup.bat' file for diagnosis.")
         input("\nPress Enter to exit...")
         sys.exit(1)
-    # Respawn process cleanly inside the private bubble
     subprocess.run([PRIVATE_PYTHON, __file__] + sys.argv[1:])
     sys.exit(0)
 
@@ -158,7 +158,6 @@ if not os.path.exists(CONFIG_DIR):
         input("Press Enter to exit...")
         sys.exit(1)
 
-# --- HEALER HANDSHAKE (LOCKFILE SYSTEM) ---
 def remove_lock():
     if os.path.exists(LOCK_FILE):
         try: os.remove(LOCK_FILE)
@@ -345,7 +344,7 @@ def update_tracker(music_folder, status, title, artist, duration, platform, link
         f.write("-" * 160 + "\n")
 
 def main():
-    with open(LOCK_FILE, 'w') as f: f.write("active") # Create Handshake Lock
+    with open(LOCK_FILE, 'w') as f: f.write("active") 
     verify_and_backup() 
     state = load_state()
     
@@ -362,9 +361,6 @@ def main():
             state["usage_count"] = 0 
             save_state(state)
             
-        # ==========================================
-        # ADVANCED DAILY BACKBONE HEALTH CHECK (4:00 AM Reset)
-        # ==========================================
         if state.get("last_health_check", 0) < active_reset_dt.timestamp():
             clear_screen()
             print("\n" + "═"*70)
@@ -373,7 +369,6 @@ def main():
             print(f" Target Engine : {os.path.basename(PRIVATE_ENGINE_PATH)}")
             time.sleep(1)
 
-            # 1. Missing File Detection (Scans Private Folder strictly)
             missing_files = []
             if not YTDLP_EXE: missing_files.append("yt-dlp.exe")
             if not FFMPEG_EXE: missing_files.append("ffmpeg.exe")
@@ -386,12 +381,10 @@ def main():
                 input("\nPress Enter to exit...")
                 sys.exit(1)
 
-            # 2. Advanced Corruption Verification (Zero False Positives)
             corrupted_files = []
             
             print(" > Verifying yt-dlp core...")
             try:
-                # 0x08000000 prevents cmd window from flashing on Windows
                 res_yt = subprocess.run([YTDLP_EXE, '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=0x08000000)
                 if res_yt.returncode != 0 or not res_yt.stdout.strip()[:4].isdigit(): 
                     corrupted_files.append("yt-dlp.exe")
@@ -412,7 +405,6 @@ def main():
                 input("\nPress Enter to exit...")
                 sys.exit(1)
 
-            # Verification Passed
             print("\n\033[92m[SUCCESS] All private backbone resources are located and connected.\033[0m")
             state["engine_health"] = True
             state["last_health_check"] = time.time()
@@ -423,7 +415,6 @@ def main():
         network_status = "\033[92mNetwork Connected\033[0m" if is_connected() else "\033[91mNetwork connection error\033[0m"
         current_quota = state.get('daily_video_count', 0)
         
-        # --- SMART-STATUS DASHBOARD VARIABLES ---
         engine_state = "\033[92mHealthy\033[0m" if state.get("engine_health", True) else "\033[91mDamaged\033[0m"
         recovery_state = "\033[92mCloud Ready\033[0m" if is_connected() else "\033[93mLocal Offline\033[0m"
         
@@ -497,13 +488,12 @@ def main():
         
         videos_info = []
         
-        # [NEW SUBPROCESS SCANNER] Bypasses internal python modules completely by calling the .exe directly
         for idx, link in enumerate(active_links):
             wait_for_network()
             try:
                 cmd_scan = [
                     YTDLP_EXE,
-                    '-J', # Dump pure JSON directly from the executable
+                    '-J', 
                     '--flat-playlist',
                     '--no-warnings',
                     '--extractor-args', 'youtube:client=android,ios',
@@ -618,7 +608,6 @@ def main():
                 save_path = os.path.join(music_folder, '%(title)s.%(ext)s')
                 target_folder = music_folder
             
-            # [NEW EXECUTABLE DOWNLOADER] Completely bypasses Python Modules and pip!
             cmd = [
                 YTDLP_EXE, 
                 '-x', 
@@ -628,7 +617,7 @@ def main():
                 '--embed-metadata', 
                 '--parse-metadata', 'playlist_index:%(track_number)s',
                 '--extractor-args', 'youtube:client=android,ios',
-                '--ffmpeg-location', PRIVATE_ENGINE_PATH, # Enforces strictly private framework usage
+                '--ffmpeg-location', PRIVATE_ENGINE_PATH, 
                 '--no-warnings',
                 '-o', save_path,
                 v['link']
@@ -643,7 +632,6 @@ def main():
                     if attempt > 1:
                         print(f"-> Retry Attempt {attempt}/3...")
                         
-                    # creationflags=0x08000000 hides the momentary background flashes of cmd instances
                     result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore', creationflags=0x08000000)
                     success = True
                     break 
