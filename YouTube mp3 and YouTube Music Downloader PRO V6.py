@@ -50,9 +50,18 @@ def trigger_crash_report(exctype, value, tb, custom_context=""):
         
     print(f"\n[SYSTEM] Detailed error report saved to: {crash_folder}")
     
-    # RELOCATED PATH: Looks for the healer in the exact same directory
-    healer_path = os.path.join(SCRIPT_DIR, "Music_Crash_Healer.py")
-    if os.path.exists(healer_path):
+    # RELOCATED PATH: Smart locator for the healer script (Deep Sweep)
+    healer_path = None
+    parent_dir = os.path.dirname(SCRIPT_DIR)
+    for search_dir in [SCRIPT_DIR, parent_dir]:
+        if healer_path: break
+        for root, dirs, files in os.walk(search_dir):
+            if any(f.lower() == "music_crash_healer.py" for f in files):
+                actual_name = next(f for f in files if f.lower() == "music_crash_healer.py")
+                healer_path = os.path.join(root, actual_name)
+                break
+                
+    if healer_path and os.path.exists(healer_path):
         print("\n\033[93m[SYSTEM] Preparing to launch Emergency Healer in 5 seconds...\033[0m")
         for i in range(5, 0, -1):
             sys.stdout.write(f"\rLaunch in: {i}s... \033[K")
@@ -94,24 +103,38 @@ def wait_for_network():
             time.sleep(3)
 
 # ==========================================
-# DYNAMIC BACKBONE CONNECTION ENGINE (PATH UPDATED)
+# DYNAMIC BACKBONE CONNECTION ENGINE (SMART PATH UPDATED)
 # ==========================================
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
 GRANDPARENT_DIR = os.path.dirname(PARENT_DIR)
 
-# Deep Sweep Search: Checks local, parent, and grandparent folders to guarantee connection
-engine_folders = glob.glob(os.path.join(SCRIPT_DIR, "Python v* file"))
-if not engine_folders: engine_folders = glob.glob(os.path.join(PARENT_DIR, "Python v* file"))
-if not engine_folders: engine_folders = glob.glob(os.path.join(GRANDPARENT_DIR, "Python v* file"))
+PRIVATE_ENGINE_PATH = None
 
-if not engine_folders:
+# Strategy 1: Instant Handshake. If the Watchdog launched this, sys.executable is already correct.
+EXEC_DIR = os.path.dirname(sys.executable)
+if os.path.exists(os.path.join(EXEC_DIR, "python.exe")) and os.path.exists(os.path.join(EXEC_DIR, "ffmpeg.exe")):
+    PRIVATE_ENGINE_PATH = EXEC_DIR
+
+# Strategy 2: Deep Sweep Search. Searches up to 2 levels out for the Holy Trinity of files.
+if not PRIVATE_ENGINE_PATH:
+    for search_dir in [SCRIPT_DIR, PARENT_DIR, GRANDPARENT_DIR]:
+        if PRIVATE_ENGINE_PATH: break
+        for root, dirs, files in os.walk(search_dir):
+            if "Setup_and_Update_Logs" in root:
+                continue
+            files_lower = [f.lower() for f in files]
+            # Ensure it is OUR specific environment by checking for multiple core files
+            if "python.exe" in files_lower and "ffmpeg.exe" in files_lower:
+                PRIVATE_ENGINE_PATH = root
+                break
+
+if not PRIVATE_ENGINE_PATH:
     print("\n\033[91m[CRITICAL ERROR] Core Engine Backbone NOT FOUND!\033[0m")
     print("The private environment is completely missing from this folder.")
-    print(">>> Please manually start 'Setup.bat' to download the missing files.")
+    print(">>> Please manually start 'Setup_and_Update.bat' to download the missing files.")
     input("\nPress Enter to exit...")
     sys.exit(1)
 
-PRIVATE_ENGINE_PATH = engine_folders[0]
 PRIVATE_PYTHON = os.path.join(PRIVATE_ENGINE_PATH, "python.exe")
 
 # --- SMART NAMING LOCATOR ---
@@ -132,7 +155,7 @@ FFPROBE_EXE = get_smart_exe(PRIVATE_ENGINE_PATH, ["ffprobe"])
 if os.path.normpath(sys.executable) != os.path.normpath(PRIVATE_PYTHON):
     if not os.path.exists(PRIVATE_PYTHON):
         print("\n\033[91m[CRITICAL ERROR] python.exe is missing from the engine folder.\033[0m")
-        print(">>> Please start 'Setup.bat' file for diagnosis.")
+        print(">>> Please start 'Setup_and_Update.bat' file for diagnosis.")
         input("\nPress Enter to exit...")
         sys.exit(1)
     subprocess.run([PRIVATE_PYTHON, __file__] + sys.argv[1:])
@@ -371,7 +394,7 @@ def main():
             if missing_files:
                 print(f"\n\033[91m[CRITICAL ERROR] Missing Required Files:\033[0m {', '.join(missing_files)}")
                 print("Your private environment is incomplete.")
-                print("\033[93m>>> Please manually start 'Setup.bat' to download the missing files.\033[0m")
+                print("\033[93m>>> Please manually start 'Setup_and_Update.bat' to download the missing files.\033[0m")
                 input("\nPress Enter to exit...")
                 sys.exit(1)
 
