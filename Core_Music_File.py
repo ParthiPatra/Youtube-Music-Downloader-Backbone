@@ -73,7 +73,6 @@ def trigger_crash_report(exctype, value, tb, custom_context=""):
             time.sleep(1)
             
         print("\n\033[93m[!] Waking up external Music_Crash_Healer.py...\033[0m")
-        # FIX: Native Windows API call prevents the cmd.exe black box from flashing
         subprocess.Popen([sys.executable, healer_path, "AUTO_TRIGGER"], creationflags=subprocess.CREATE_NEW_CONSOLE)
     else:
         print("\n[WARNING] 'Music_Crash_Healer.py' not found. Cannot auto-heal.")
@@ -91,7 +90,6 @@ def sync_online_time():
     global GLOBAL_TIME_OFFSET
     print("\033[96m[SYSTEM] Synchronizing universal internet clock...\033[0m")
     try:
-        # Primary: WorldTimeAPI
         req = urllib.request.Request("http://worldtimeapi.org/api/ip", headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=3) as response:
             data = json.loads(response.read().decode())
@@ -103,7 +101,6 @@ def sync_online_time():
         pass 
         
     try:
-        # Fallback: Deep-scan Google's HTTP Response Headers
         req = urllib.request.Request("https://google.com", method="HEAD", headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=3) as response:
             date_str = response.headers['Date']
@@ -192,7 +189,7 @@ if os.path.normpath(sys.executable) != os.path.normpath(PRIVATE_PYTHON):
 # ==========================================
 # INITIALIZATION & PHANTOM RELOCATION
 # ==========================================
-SCRIPT_VERSION = 6.0
+SCRIPT_VERSION = 6.1
 
 APPDATA_DIR = os.getenv('APPDATA')
 CONFIG_DIR = os.path.join(APPDATA_DIR, 'yt-dlp')
@@ -204,12 +201,10 @@ if not os.path.exists(CONFIG_DIR):
     try: os.makedirs(CONFIG_DIR)
     except: sys.exit(1)
 
-# --- PHANTOM STORAGE LOCATION ---
-# Hides the tracking files in a deeply obscured Windows .NET logging folder
 SECURE_DIR = os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'CLR_v4.0', 'UsageLogs')
 if not os.path.exists(SECURE_DIR):
     try: os.makedirs(SECURE_DIR)
-    except: SECURE_DIR = CONFIG_DIR # Failsafe fallback
+    except: SECURE_DIR = CONFIG_DIR 
 
 STATE_FILE = os.path.join(SECURE_DIR, 'm_diag_state.bin')
 SHADOW_FILE = os.path.join(SECURE_DIR, 'm_diag_shadow.sys')
@@ -260,30 +255,28 @@ def decrypt_payload(encoded_str, key_bytes):
         json_str = bytearray(xored[i] ^ key_bytes[i % key_len] for i in range(len(xored))).decode('utf-8')
         return json.loads(json_str)
     except Exception: 
-        return None
+        return None 
 
 def generate_hmac_signature(state_dict):
     clean_dict = {k: v for k, v in state_dict.items() if k != 'signature'}
     canonical_string = json.dumps(clean_dict, sort_keys=True).encode('utf-8')
     return hmac.new(HMAC_SECRET_KEY, canonical_string, hashlib.sha256).hexdigest()
 
-def apply_cheater_punishment(state_dict, violation_reason):
-    print(f"\n\033[91m\033[5m[SECURITY ALERT] {violation_reason}\033[0m")
+def apply_cheater_punishment(state_dict, violation_reason, penalty_hours):
+    print(f"\n\033[91m\033[5m[SECURITY BREACH DETECTED] {violation_reason}\033[0m")
     print("\033[91mTampering, decrypting, or deleting system quota files detected!\033[0m")
-    print("\033[93mPUNISHMENT APPLIED: Your daily quota has been maxed out to 20/20.\033[0m")
-    print("You must wait until the 4:00 AM reset to use the downloader again.")
+    print(f"\033[93mPUNISHMENT APPLIED: {penalty_hours}-Hour Sovereign Lockout Enabled.\033[0m")
     time.sleep(5)
     
     state_dict["daily_video_count"] = 20
-    state_dict["usage_count"] = 10
-    state_dict["cooldown_until"] = get_true_time() + (5 * 3600)
+    state_dict["punish_until"] = get_true_time() + (penalty_hours * 3600)
     return state_dict
 
 def load_state():
     default_state = {
         "usage_count": 0, "cooldown_until": 0.0, "daily_video_count": 0, 
         "last_activity_timestamp": 0, "last_health_check": 0, "engine_health": True,
-        "last_daily_backup": 0, "last_success_backup": 0, "detonator_expiry": 0
+        "last_daily_backup": 0, "last_success_backup": 0, "punish_until": 0.0
     }
     
     file_exists = os.path.exists(STATE_FILE)
@@ -294,49 +287,63 @@ def load_state():
         
     loaded_state = None
     cheat_reason = None
+    penalty_hours = 0
     
-    if file_exists and shadow_exists:
+    # LEVEL 2 PUNISHMENT: Data Deletion / Missing Files (One exists, but sibling doesn't)
+    if file_exists != shadow_exists:
+        cheat_reason = "HIDDEN SHADOW TRACKER DELETED" if file_exists else "MAIN QUOTA FILE DELETED"
+        penalty_hours = 36
+        try:
+            if file_exists:
+                with open(STATE_FILE, 'r') as f: loaded_state = decrypt_payload(f.read(), XOR_CIPHER_KEY)
+            else:
+                with open(SHADOW_FILE, 'r') as f: loaded_state = decrypt_payload(f.read(), XOR_CIPHER_KEY[::-1])
+        except: pass
+            
+    # LEVEL 1 PUNISHMENT: Hyper-Sensitive Data Manipulation
+    elif file_exists and shadow_exists:
         try:
             with open(STATE_FILE, 'r') as f: 
-                loaded_state = decrypt_payload(f.read(), XOR_CIPHER_KEY)
-            if not loaded_state: 
-                cheat_reason = "QUOTA ENCRYPTION CORRUPTED"
-            elif loaded_state.get('signature') != generate_hmac_signature(loaded_state):
-                cheat_reason = "QUOTA FILE TAMPERING DETECTED"
-        except: 
-            cheat_reason = "QUOTA FILE CORRUPTED"
-            
-    elif shadow_exists and not file_exists:
-        cheat_reason = "MAIN QUOTA FILE DELETED"
-        try:
+                raw_data_main = f.read()
             with open(SHADOW_FILE, 'r') as f:
-                loaded_state = decrypt_payload(f.read(), XOR_CIPHER_KEY[::-1]) 
-        except: loaded_state = default_state.copy()
+                raw_data_shadow = f.read()
+                
+            loaded_state = decrypt_payload(raw_data_main, XOR_CIPHER_KEY)
+            shadow_state = decrypt_payload(raw_data_shadow, XOR_CIPHER_KEY[::-1])
             
-    elif file_exists and not shadow_exists:
-        cheat_reason = "HIDDEN SHADOW TRACKER DELETED"
-        try:
-            with open(STATE_FILE, 'r') as f: 
-                loaded_state = decrypt_payload(f.read(), XOR_CIPHER_KEY)
-        except: loaded_state = default_state.copy()
+            # The Silent Swallowed Exception Fix
+            if not loaded_state or not shadow_state: 
+                cheat_reason = "QUOTA ENCRYPTION CORRUPTED/TAMPERED"
+                penalty_hours = 24
+            # The Signature Mismatch Fix
+            elif loaded_state.get('signature') != generate_hmac_signature(loaded_state):
+                cheat_reason = "QUOTA FILE SIGNATURE MISMATCH"
+                penalty_hours = 24
+            elif shadow_state.get('signature') != generate_hmac_signature(shadow_state):
+                cheat_reason = "SHADOW FILE SIGNATURE MISMATCH"
+                penalty_hours = 24
+            # State and Shadow Synchronization Check
+            elif loaded_state != shadow_state:
+                cheat_reason = "STATE AND SHADOW DESYNC DETECTED"
+                penalty_hours = 24
+            # Hyper-Sensitive Byte-Level Tamper Check (Catches added/removed invisible chars, spaces, newlines)
+            elif encrypt_payload(loaded_state, XOR_CIPHER_KEY) != raw_data_main:
+                cheat_reason = "QUOTA FILE BYTE-LEVEL TAMPERING DETECTED"
+                penalty_hours = 24
+            elif encrypt_payload(shadow_state, XOR_CIPHER_KEY[::-1]) != raw_data_shadow:
+                cheat_reason = "SHADOW FILE BYTE-LEVEL TAMPERING DETECTED"
+                penalty_hours = 24
+        except: 
+            cheat_reason = "QUOTA FILE READ/FORMAT ERROR"
+            penalty_hours = 24
             
     if not loaded_state: loaded_state = default_state.copy()
         
     for k, v in default_state.items():
         if k not in loaded_state: loaded_state[k] = v
-
-    # --- DETONATOR BOMB CHECK ---
-    if get_true_time() > loaded_state.get("detonator_expiry", 0) and loaded_state.get("detonator_expiry", 0) > 0:
-        set_hidden_status(STATE_FILE, False)
-        set_hidden_status(SHADOW_FILE, False)
-        try: os.remove(STATE_FILE)
-        except: pass
-        try: os.remove(SHADOW_FILE)
-        except: pass
-        return default_state.copy()
         
     if cheat_reason:
-        loaded_state = apply_cheater_punishment(loaded_state, cheat_reason)
+        loaded_state = apply_cheater_punishment(loaded_state, cheat_reason, penalty_hours)
         save_state(loaded_state) 
         
     return loaded_state
@@ -351,7 +358,7 @@ def save_state(state):
     
     set_hidden_status(SHADOW_FILE, False)
     with open(SHADOW_FILE, 'w') as f:
-        f.write(encrypt_payload(state, XOR_CIPHER_KEY[::-1])) # Shadow uses reverse key
+        f.write(encrypt_payload(state, XOR_CIPHER_KEY[::-1])) 
     set_hidden_status(SHADOW_FILE, True)
 
 # ==========================================
@@ -370,6 +377,28 @@ def countdown_timer(seconds):
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
+
+def handle_sovereign_lockout(punish_until):
+    """Dynamic 0.555-Second Frequency Shifter for Persistent Lockout"""
+    toggle = True
+    while get_true_time() < punish_until:
+        clear_screen()
+        remaining = int(punish_until - get_true_time())
+        hours, remainder = divmod(remaining, 3600)
+        mins, secs = divmod(remainder, 60)
+        
+        color = "\033[91m" if toggle else "\033[93m"
+        print(color + "╔" + "═"*70 + "╗")
+        print("║" + " "*70 + "║")
+        print("║" + "SOVEREIGN SECURITY LOCKOUT ACTIVE".center(70) + "║")
+        print("║" + " "*70 + "║")
+        print("╚" + "═"*70 + "╝\033[0m")
+        print(f"\n   Penalty Time Remaining: {int(hours):02d}:{int(mins):02d}:{int(secs):02d}")
+        print("\n   Tampering with application files is strictly prohibited.")
+        print("   The application will unlock automatically once the timer expires.")
+        
+        toggle = not toggle
+        time.sleep(0.555) 
 
 def ask_playlist_timer(link):
     print(f"\n\033[93m[!] PLAYLIST SPOTTED:\033[0m {link}")
@@ -414,16 +443,21 @@ def get_music_folder():
 
     while True:
         print("\nDownload folder missing or not set.")
-        new_path = input("Please paste the full path to your desired Music folder: ").strip()
+        new_path = input("Please paste the full path to your desired Music folder (or press Enter for default): ").strip()
         new_path = new_path.strip('"').strip("'")
         
-        if new_path:
-            if not os.path.exists(new_path):
-                print(f"Folder does not exist. Creating: {new_path}")
-                try: os.makedirs(new_path)
-                except: continue
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f: f.write(new_path)
-            return new_path
+        if not new_path:
+            default_music = os.path.join(os.path.expanduser("~"), "Music")
+            new_path = os.path.join(default_music, "Youtube Music Downloads")
+            print(f"No input detected. Defaulting to: {new_path}")
+            
+        if not os.path.exists(new_path):
+            print(f"Folder does not exist. Creating: {new_path}")
+            try: os.makedirs(new_path)
+            except: continue
+            
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f: f.write(new_path)
+        return new_path
 
 def get_next_serial(log_file):
     if not os.path.exists(log_file): return 1
@@ -476,21 +510,27 @@ def main():
     state = load_state()
     
     while True:
+        # 1. Enforce True Non-Volatile Persistent Lockout (Top Priority)
+        punish_until = state.get("punish_until", 0)
+        if get_true_time() < punish_until:
+            handle_sovereign_lockout(punish_until)
+            # Once timer clears, remove punishment lock
+            state["punish_until"] = 0
+            save_state(state)
+            continue # Restart loop to re-evaluate state
+
         clear_screen()
         
         now_dt = get_true_datetime()
         active_reset_dt = now_dt.replace(hour=4, minute=0, second=0, microsecond=0)
         if now_dt < active_reset_dt: active_reset_dt -= datetime.timedelta(days=1)
             
-        # ARM THE 24.5 HOUR DETONATOR BOMB
-        next_reset_dt = active_reset_dt + datetime.timedelta(days=1)
-        state["detonator_expiry"] = next_reset_dt.timestamp() + 1800 
-            
         if state.get("last_daily_backup", 0) < active_reset_dt.timestamp():
             execute_backup()
             state["last_daily_backup"] = get_true_time()
             save_state(state)
             
+        # Standard 4:00 AM Reset Logic (Only runs if NOT punished)
         if state.get("last_activity_timestamp", 0) < active_reset_dt.timestamp():
             state["daily_video_count"] = 0
             state["usage_count"] = 0 
@@ -548,7 +588,7 @@ def main():
         print("\033[96m╔" + "═"*70 + "╗")
         print("║" + " "*70 + "║")
         print("║" + "YOUTUBE SMART MUSIC & PLAYLIST DOWNLOADER".center(70) + "║")
-        print("║" + "(PRO EDITION) - VERSION 6".center(70) + "║")
+        print("║" + "(PRO EDITION) - VERSION 6.1".center(70) + "║")
         print("║" + " "*70 + "║")
         print("╠" + "═"*70 + "╣")
         print("║" + "By: Perk-Senpai & Google Gemini | Date Created: 15/05/2026".center(70) + "║")
